@@ -1,0 +1,13 @@
+.gradle/
+build/
+.git/
+.gitignore
+*.md
+.env
+.env.*
+!.env.example
+.idea/
+*.iml
+TASKS.md
+MANUAL-PRUEBAS.md
+.claude/
