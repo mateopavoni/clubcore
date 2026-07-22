@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: clubcore
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    try-it-out-enabled: true
+  api-docs:
+    path: /v3/api-docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # health: público (healthcheck Docker/Dokku)
+        # prometheus, metrics: requieren rol ADMIN (ver SecurityConfig)
+        include: health,prometheus,metrics
+  endpoint:
+    health:
+      show-details: never
+    prometheus:
+      enabled: true
+
+# Resilience4j — configuración del webhook saliente a n8n
+# Documentación del patrón: WebhookDispatcher.java
+resilience4j:
+  retry:
+    instances:
+      n8nWebhook:
+        max-attempts: 3
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        # Solo reintentar errores de red/HTTP, no lógica de negocio
+        retry-exceptions:
+          - org.springframework.web.client.RestClientException
+          - java.io.IOException
+  circuitbreaker:
+    instances:
+      n8nWebhook:
+        # Ventana deslizante de 10 llamadas; abre si >=50% fallan
+        sliding-window-size: 10
+        # Sin esto, Resilience4j usa su default (100) para evaluar la tasa de fallos,
+        # completamente desacoplado de sliding-window-size=10 -> el circuito nunca
+        # llegaría a abrir en la práctica. Detectado con un test de integración real.
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        # 30 segundos en estado OPEN antes de pasar a HALF-OPEN
+        wait-duration-in-open-state: 30s
+        # En HALF-OPEN: permite 3 llamadas de prueba
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true

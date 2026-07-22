@@ -1,0 +1,27 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:clubcore_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=MySQL
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+    show-sql: false
+  flyway:
+    # Flyway deshabilitado en tests: el schema lo genera Hibernate desde las entidades.
+    # Decisión deliberada: evita depender de compatibilidad H2/MySQL en SQL de migrations.
+    enabled: false
+
+jwt:
+  secret: dGVzdC1zZWNyZXQta2V5LXRoYXQtaXMtbG9uZy1lbm91Z2gtZm9yLUhTMjU2LWFsZ29yaXRobQ==
+  expiration-ms: 3600000
+
+n8n:
+  webhook-url: ""
+
+logging:
+  level:
+    com.clubcore: DEBUG
+    org.springframework.security: DEBUG
