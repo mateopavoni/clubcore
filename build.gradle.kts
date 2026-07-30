@@ -85,9 +85,9 @@ dependencies {
     // Se pina 1.21.4 explícitamente: Spring Boot 3.3.x BOM gestiona 1.19.8 (docker-java 3.3.x)
     // que negocia API v1.32, incompatible con Docker Engine 27+/29+ (requiere API >=1.44).
     // Testcontainers 1.21.x incluye docker-java con soporte para la API moderna.
-    testImplementation("org.testcontainers:testcontainers:1.21.4")
-    testImplementation("org.testcontainers:mysql:1.21.4")
-    testImplementation("org.testcontainers:junit-jupiter:1.21.4")
+    testImplementation("org.testcontainers:testcontainers:2.0.5")
+    testImplementation("org.testcontainers:mysql:2.0.5")
+    testImplementation("org.testcontainers:junit-jupiter:2.0.5")
 }
 
 tasks.withType<Test> {
