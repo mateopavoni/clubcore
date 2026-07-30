@@ -52,7 +52,7 @@ dependencies {
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
 
     // OpenAPI / Swagger UI
-    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0")
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
 
     // Resilience4j — retry + circuit breaker en webhook saliente a n8n
     // Versión 2.2.x es la compatible con Spring Boot 3.2.x+
