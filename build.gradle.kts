@@ -2,10 +2,17 @@ plugins {
     java
     id("org.springframework.boot") version "3.3.12"
     id("io.spring.dependency-management") version "1.1.7"
+    // Expone commit/branch/build-time en /actuator/info
+    id("com.gorylenko.gradle-git-properties") version "2.4.2"
 }
 
 group = "com.clubcore"
 version = "0.1.0"
+
+configure<com.gorylenko.GitPropertiesPluginExtension> {
+    // No romper el build si se compila desde un tarball sin .git (ej. algunos entornos de deploy)
+    failOnNoGitDirectory = false
+}
 
 java {
     toolchain {

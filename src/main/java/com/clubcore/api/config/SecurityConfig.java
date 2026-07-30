@@ -51,7 +51,8 @@ public class SecurityConfig {
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
-            "/actuator/health"        // healthcheck Docker/Dokku — público intencionalmente
+            "/actuator/health",       // healthcheck Docker/Dokku — público intencionalmente
+            "/actuator/info"          // commit/build info — no expone datos sensibles
     };
 
     @Bean
