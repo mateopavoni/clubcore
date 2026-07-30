@@ -8,6 +8,8 @@ import com.clubcore.api.mapper.PlanMapper;
 import com.clubcore.api.repository.PlanRepository;
 import com.clubcore.api.service.PlanService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +24,7 @@ public class PlanServiceImpl implements PlanService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "planes", allEntries = true)
     public PlanResponse crearPlan(PlanRequest request) {
         Plan plan = Plan.builder()
                 .nombre(request.nombre())
@@ -36,12 +39,14 @@ public class PlanServiceImpl implements PlanService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "planes", key = "#id")
     public PlanResponse obtenerPlan(Long id) {
         return planMapper.toResponse(findOrThrow(id));
     }
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "planes", key = "'activos'")
     public List<PlanResponse> listarPlanesActivos() {
         return planRepository.findByActivoTrue().stream()
                 .map(planMapper::toResponse)
@@ -50,6 +55,7 @@ public class PlanServiceImpl implements PlanService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "planes", allEntries = true)
     public PlanResponse actualizarPlan(Long id, PlanRequest request) {
         Plan plan = findOrThrow(id);
         plan.setNombre(request.nombre());
