@@ -91,7 +91,7 @@ flowchart LR
     Service --> Repo["Spring Data JPA"]
     Repo --> MySQL[("MySQL 8")]
 
-    Service -. async .-> Dispatcher["NotificationDispatchService"]
+    StateEngine -. "@Scheduled 8am\nMembresiaPorVencerEvent" .-> Dispatcher["NotificationDispatchService\n@Async @EventListener"]
     Dispatcher --> WebhookD["WebhookDispatcher\nResilience4j retry+CB"]
     WebhookD -.-> N8N[("n8n / webhook externo")]
 ```
