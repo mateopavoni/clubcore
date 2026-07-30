@@ -94,6 +94,11 @@ jobs:
           chmod 600 ~/.ssh/dokku_deploy
           ssh-keyscan -H "${{ secrets.DOKKU_HOST }}" >> ~/.ssh/known_hosts
 
+      - name: Setear GIT_REV (Dokku construye sin .git, actuator/info lo lee de esta env var)
+        run: |
+          ssh -i ~/.ssh/dokku_deploy "dokku@${{ secrets.DOKKU_HOST }}" \
+            config:set --no-restart "${{ secrets.DOKKU_APP }}" "GIT_REV=${{ github.sha }}"
+
       - name: Push a Dokku (dispara build + deploy en la VPS)
         run: |
           git remote add dokku "dokku@${{ secrets.DOKKU_HOST }}:${{ secrets.DOKKU_APP }}"
