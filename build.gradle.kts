@@ -1,6 +1,6 @@
 plugins {
     java
-    id("org.springframework.boot") version "3.3.12"
+    id("org.springframework.boot") version "4.1.0"
     id("io.spring.dependency-management") version "1.1.7"
     // Expone commit/branch/build-time en /actuator/info
     id("com.gorylenko.gradle-git-properties") version "2.4.2"
