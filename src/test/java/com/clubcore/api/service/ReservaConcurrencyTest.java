@@ -99,6 +99,18 @@ class ReservaConcurrencyTest {
         salida.await(10, TimeUnit.SECONDS);
         pool.shutdown();
 
+        System.out.println("""
+
+                Plan con cupo mensual: 1 reserva
+                Disparando %d requests concurrentes contra el mismo cliente...
+
+                Resultado
+                ---------
+                  reservas confirmadas : %d
+                  rechazadas (cupo)    : %d
+                  filas en la tabla    : %d
+                """.formatted(hilos, exitos.get(), rechazosPorCupo.get(), reservaRepository.count()));
+
         assertThat(exitos.get()).isEqualTo(1);
         assertThat(rechazosPorCupo.get()).isEqualTo(hilos - 1);
         assertThat(reservaRepository.count()).isEqualTo(1);

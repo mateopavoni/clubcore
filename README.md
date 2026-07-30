@@ -1,93 +1,122 @@
 # ClubCore
 
-API REST para la gestión integral de un instituto de salud / complejo deportivo: membresías con motor de estados, pagos, reservas de turnos, rutinas personalizadas, control de accesos e integraciones webhook asíncronas.
+> **API REST para la gestión integral de un instituto de salud / complejo deportivo**, construida
+> alrededor de un problema difícil: **el estado de una membresía nunca puede ser una columna
+> cacheada** — vencimiento, deuda, suspensión manual y cupo mensual de reservas cambian entre que
+> alguien lo consulta y el momento en que hace check-in. Motor de estados on-demand, seguridad
+> JWT+RBAC, y una garantía de concurrencia que se puede verificar con un test, no solo prometer.
 
 [![demo](https://img.shields.io/badge/demo-live-brightgreen)](https://api.clubcore.mateopavoni.com.ar/swagger-ui.html)
-![CI](https://github.com/mateopavoni/clubcore/actions/workflows/ci.yml/badge.svg)
-![stack](https://img.shields.io/badge/stack-Java%2021%20·%20Spring%20Boot%20·%20MySQL%20·%20Docker-2b2b2b)
-![license](https://img.shields.io/badge/license-proprietary-red)
+![stack](https://img.shields.io/badge/stack-Java%2021%20·%20Spring%20Boot%20·%20MySQL%20·%20Docker-2b2b2b) · ![license](https://img.shields.io/badge/license-proprietary-red)
 
-**Demo en vivo**: [api.clubcore.mateopavoni.com.ar/swagger-ui.html](https://api.clubcore.mateopavoni.com.ar/swagger-ui.html) — Swagger interactivo contra la API real, desplegada en una VPS propia vía Dokku. `/actuator/health` público si solo querés confirmar que está viva.
+Stack: **Java 21 · Spring Boot 3.3 · MySQL 8 · Resilience4j/Bucket4j · Docker**
+
+### 🔗 Demo en vivo
+
+**[api.clubcore.mateopavoni.com.ar](https://api.clubcore.mateopavoni.com.ar/swagger-ui.html)** —
+Swagger interactivo contra la API real. Podés loguearte con una cuenta de cliente ya cargada
+(rol acotado a sus propios datos, no administrativo) y probar reservas/check-in en vivo:
+
+```
+POST https://api.clubcore.mateopavoni.com.ar/api/v1/auth/login
+cliente1@clubcore.com / Admin1234!
+```
+
+`/actuator/health` público si solo querés confirmar que está viva. Deployado en una VPS propia
+vía **Dokku**. Deploy automático en cada push a `main` (`.github/workflows/ci.yml`).
+
+---
 
 ## ¿Qué resuelve?
 
-El problema real de este tipo de sistema no es el CRUD — es que **el estado de una membresía nunca es una columna, es un cálculo**: vencimiento, deuda, suspensión manual y cupo mensual de reservas pueden cambiar entre el momento en que alguien lo consulta y el momento en que hace check-in. Cachear ese estado en una columna mutable garantiza que en algún momento esté mal.
+Cuando diez clientes intentan reservar el último cupo del mes al mismo tiempo, un sistema ingenuo
+deja pasar a los diez. **ClubCore** sostiene la línea: el cupo se cierra con un lock por cliente
+sostenido dentro de la misma transacción, así que entra exactamente uno y el resto recibe un
+rechazo limpio, no una reserva fantasma.
 
-`MembresiaStateService` lo recalcula on-demand en cada decisión crítica (reserva, check-in) — nunca confía en un valor guardado.
+**No es un CRUD con formularios.** El valor está en tres piezas de ingeniería real:
 
-**Verificado, no prometido**: el primer intento de cerrar la carrera del cupo mensual de reservas fue `@Transactional` + `SELECT ... FOR UPDATE` — bajo concurrencia real, 10 requests paralelas contra un plan con cupo=1 persistían las 10 igual (el commit de Spring ocurre después de que el método retorna, no antes). El fix real es un lock de JVM por cliente con `TransactionTemplate` en vez de la anotación. Queda como test de regresión, no como nota en un README:
+1. **Motor de estados verificable, no cacheado** — `MembresiaStateService` recalcula
+   `ACTIVA`/`INACTIVA`/`DEUDA`/`SUSPENDIDA` on-demand en cada decisión crítica (reserva, check-in).
+   Nunca lee un campo mutable guardado en la fila — el campo `estadoCacheado` es solo una copia
+   derivada para listados, nunca la fuente de verdad.
+2. **Concurrencia probada, no prometida** — el primer intento de cerrar el cupo mensual fue
+   `@Transactional` + `SELECT ... FOR UPDATE`: bajo concurrencia real, 10 requests paralelas contra
+   un plan con cupo=1 persistían las 10 igual (el commit de Spring ocurre después de que el método
+   retorna, no antes). El fix real es un lock de JVM por cliente con `TransactionTemplate` en vez
+   de la anotación — y queda como test de regresión, no como nota en un README.
+3. **Resiliencia real en el webhook saliente** — retry con backoff exponencial + circuit breaker
+   (Resilience4j) hacia n8n. El fallback vive en `@CircuitBreaker`, no en `@Retry` — al revés, el
+   `@Retry` agota sus intentos y de todos modos propaga la excepción sin fallback, error detectado
+   en verificación real contra el circuito abierto.
 
-```bash
-./gradlew test --tests '*ReservaConcurrencyTest*'
-# 10 requests paralelas contra cupo=1 -> exactamente 1 reserva persistida, 9 rechazadas
-```
+### Features
 
-## Stack
+- **Motor de estados on-demand**, sin cache mutable — bloquea reservas y check-in automáticamente
+  si la membresía no está `ACTIVA`.
+- **Cupo mensual de reservas cerrado bajo concurrencia real** — lock por cliente + `TransactionTemplate`,
+  verificado con 10 requests paralelas, cero reservas fantasma.
+- **JWT + RBAC de punta a punta** — roles ADMIN/ENTRENADOR/CLIENTE vía `@PreAuthorize` por endpoint,
+  contraseñas con BCrypt.
+- **Webhooks resilientes** — retry + circuit breaker (Resilience4j) en el webhook saliente a n8n;
+  webhook inbound de pagos simulando confirmación de gateway externo.
+- **Rate limiting distribuible en el diseño** — Bucket4j en login (5/min) y webhooks (20/min) por IP.
+- **Cache Caffeine** en el catálogo de planes (baja escritura, alta lectura), con métricas de
+  hit/miss reales vía Actuator.
+- **Observabilidad de producción** — `/actuator/prometheus` y `/actuator/metrics` gateados a ADMIN,
+  `/actuator/info` con commit real desplegado, logging JSON estructurado en `prod`.
+- **CI/CD real** — test → build de imagen a GHCR → deploy automático a Dokku en cada push a `main`.
 
-- Java 21 LTS + Spring Boot 3.3.x (Gradle Kotlin DSL)
-- Spring Security + JWT (JJWT 0.12) — stateless, RBAC con `@PreAuthorize` a nivel de método
-- Spring Data JPA + Hibernate + MySQL 8 (Flyway para migraciones versionadas)
-- Resilience4j (retry + circuit breaker en el webhook saliente) · Bucket4j (rate limiting) · Micrometer/Prometheus
-- Spring Cache + Caffeine (catálogo de planes) · logging JSON estructurado en producción (Logstash encoder)
-- MapStruct — mapeo Entity ↔ DTO en tiempo de compilación
-- springdoc-openapi (Swagger UI)
-- Testcontainers (MySQL real en tests de integración) · JUnit 5 + Mockito
-- Docker + GitHub Actions (test → imagen a GHCR → deploy a Dokku) · Dokku en VPS propia
+### En números
 
-## Funcionalidades
+**27 tests** (unitarios + integración con Testcontainers contra MySQL 8.4 real) · test de
+concurrencia real (10 requests paralelas contra cupo=1, 0 reservas de más) · deploy en producción
+con CI/CD propio (push a `main` → test → imagen a GHCR → deploy a Dokku) · 9 controllers, 8
+capas de servicio, arquitectura completa controller→service→repository.
 
-**Autenticación y autorización**
-- Login JWT (token sin estado) → `POST /api/v1/auth/login`
-- Roles ADMIN / ENTRENADOR / CLIENTE vía `@PreAuthorize` por endpoint
-- Contraseñas hasheadas con BCrypt
+---
 
-**Motor de estados de membresía** (pieza central)
-- Evaluación on-demand: `ACTIVA` | `INACTIVA` (vencida) | `DEUDA` (pagos pendientes) | `SUSPENDIDA` (manual)
-- Incluye el cupo mensual de reservas del plan, cerrado bajo concurrencia real (ver arriba)
-- Recalculado antes de cada decisión crítica, nunca leído de una columna cacheada
+## Arquitectura (resumen)
 
-**Gestión de membresías, planes, pagos y reservas**
-- CRUD paginado de clientes, planes (con caché Caffeine) y membresías
-- CRUD de pagos y reservas, con validación de estado antes de crear
-- Webhook inbound `POST /api/v1/webhooks/pagos` (simula confirmación de gateway externo)
-- Suspensión manual: `PATCH /api/v1/membresias/{id}/suspender`
-
-**Check-in y control de accesos**
-- `POST /api/v1/accesos` — rechaza automáticamente si la membresía no es válida, registra el motivo
-
-**Integraciones asíncronas resilientes**
-- Job `@Scheduled` diario detecta membresías por vencer y dispara un webhook saliente a n8n
-- Resilience4j: retry con backoff exponencial + circuit breaker (el fallback vive en `@CircuitBreaker`, no en `@Retry` — al revés no funciona, Spring no lo intercepta)
-- Rate limiting con Bucket4j en login y webhooks (5/min y 20/min por IP)
-
-**Observabilidad**
-- `/actuator/health` público, `/actuator/prometheus` y `/actuator/metrics` restringidos a ADMIN
-- `/actuator/info` con commit/branch reales (git-properties en CI; en Dokku —que construye sin `.git`— se completa vía `GIT_REV` seteado por el pipeline)
-- Logging JSON estructurado en `prod`, legible por Docker/Loki/ELK
-
-## Arquitectura
+El detalle —motor de estados, por qué `TransactionTemplate` y no `@Transactional` en el lock de
+reservas, por qué el fallback va en `@CircuitBreaker` y no en `@Retry`— está en
+**[`ARCHITECTURE.md`](./ARCHITECTURE.md)**.
 
 ```mermaid
-flowchart TB
-    Client[Cliente HTTP] --> JWT[JwtFilter + RateLimitFilter]
-    JWT --> Controller[Controllers @PreAuthorize]
-    Controller --> Service[Services]
-    Service --> StateEngine[MembresiaStateService<br/>motor de estados on-demand]
-    Service --> Repo[Spring Data JPA]
-    Repo --> MySQL[(MySQL 8)]
-    Service -.async.-> Dispatcher[NotificationDispatchService]
-    Dispatcher --> WebhookD[WebhookDispatcher<br/>Resilience4j retry+CB]
-    WebhookD -.-> N8N[(n8n / webhook externo)]
+flowchart LR
+    Client["Cliente HTTP"] --> Filters["JwtFilter + RateLimitFilter"]
+    Filters --> Controller["Controllers\n@PreAuthorize"]
+    Controller --> Service["Services"]
+    Service --> StateEngine["MembresiaStateService\nmotor de estados on-demand"]
+    Service --> Repo["Spring Data JPA"]
+    Repo --> MySQL[("MySQL 8")]
+
+    Service -. async .-> Dispatcher["NotificationDispatchService"]
+    Dispatcher --> WebhookD["WebhookDispatcher\nResilience4j retry+CB"]
+    WebhookD -.-> N8N[("n8n / webhook externo")]
 ```
 
-Detalle completo (capas, trade-offs, por qué `TransactionTemplate` y no `@Transactional` en el lock de reservas, por qué el fallback va en `@CircuitBreaker`) en **[ARCHITECTURE.md](./ARCHITECTURE.md)**.
+```
+clubcore/
+├── src/main/java/com/clubcore/api/
+│   ├── controller/        9 controllers, @PreAuthorize por endpoint
+│   ├── service/           lógica de dominio + MembresiaStateService (motor de estados)
+│   │   └── impl/
+│   ├── security/          JwtFilter, JwtService, RateLimitFilter (Bucket4j)
+│   ├── config/            SecurityConfig, CacheConfig, AsyncConfig, DeployInfoContributor
+│   ├── entity/            JPA — Cliente, Membresia, Plan, Pago, Reserva, Acceso, Rutina
+│   ├── dto/                request/ + response/
+│   ├── mapper/             MapStruct Entity ↔ DTO
+│   ├── event/              MembresiaPorVencerEvent (job @Scheduled diario)
+│   └── exception/          GlobalExceptionHandler, sin stack traces al cliente
+├── src/main/resources/
+│   └── db/migration/       Flyway V1 (schema) + V2 (seed)
+├── docker-compose.yml
+├── Dockerfile
+└── ARCHITECTURE.md
+```
 
-## En números
-
-- **27 tests** (unitarios + integración con Testcontainers contra MySQL 8.4 real), corriendo en CI en cada push
-- **9 controllers**, arquitectura en capas completa (controller → service → repository)
-- **CI/CD real**: test → build de imagen a GHCR → deploy automático a Dokku en cada push a `main` — no es un diagrama, es [el workflow](.github/workflows/ci.yml) corriendo
-- El fix de concurrencia de reservas está verificado por un test que falla si alguien reintroduce la carrera, no por una anotación de confianza
+---
 
 ## Cómo correr
 
@@ -97,45 +126,75 @@ cp .env.example .env   # completar DB_PASSWORD, DB_ROOT_PASSWORD, JWT_SECRET
 
 docker-compose up -d   # MySQL 8 en contenedor
 ./gradlew bootRun       # Flyway migra automáticamente
-
-# http://localhost:8080/swagger-ui.html
 ```
 
-```bash
-./gradlew test          # 27 tests, H2 en memoria, sin Docker
-```
-
-Usuarios seed (`Admin1234!` para los tres): `admin@clubcore.com` (ADMIN), `entrenador@clubcore.com` (ENTRENADOR), `cliente1@clubcore.com` (CLIENTE). Más detalle en [RUN.md](RUN.md).
-
-### Ejemplos de uso (curl)
+- API: http://localhost:8080
+- Swagger UI: http://localhost:8080/swagger-ui.html
 
 ```bash
-# Login
 curl -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@clubcore.com","password":"Admin1234!"}'
-TOKEN="<token de la respuesta>"
-
-# Crear una reserva (valida el estado de membresía y el cupo mensual)
-curl -X POST http://localhost:8080/api/v1/reservas \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"clienteId":3,"descripcion":"Clase de spinning","fechaReserva":"2026-08-15T10:00:00"}'
-# 201 si la membresía está ACTIVA y hay cupo, 403 (MembresiaInvalidaException) si no
-
-# Check-in (bloquea membresías inválidas)
-curl -X POST http://localhost:8080/api/v1/accesos \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"clienteId":3}'
 ```
+
+Usuarios seed (`Admin1234!` para los tres): `admin@clubcore.com` (ADMIN),
+`entrenador@clubcore.com` (ENTRENADOR), `cliente1@clubcore.com` (CLIENTE). Más detalle en
+[RUN.md](RUN.md).
+
+---
+
+## La demo de concurrencia
+
+```bash
+./gradlew test --tests '*ReservaConcurrencyTest*'
+```
+
+Dispara 10 requests paralelas contra un cliente con un plan de cupo=1. Sin el lock, las 10 se
+persistirían igual (verificado así con el fix anterior). Salida real de la corrida:
+
+```
+Plan con cupo mensual: 1 reserva
+Disparando 10 requests concurrentes contra el mismo cliente...
+
+Resultado
+---------
+  reservas confirmadas : 1
+  rechazadas (cupo)    : 9
+  filas en la tabla    : 1
+```
+
+---
+
+## Tests
+
+```bash
+./gradlew test     # 27 tests, H2 en memoria, sin Docker
+```
+
+La suite cubre el motor de estados (10 casos), RBAC por endpoint, el circuit breaker del webhook
+(Resilience4j), la migración Flyway + motor de estados contra MySQL real (Testcontainers), y el
+fix de concurrencia de reservas de arriba.
+
+---
 
 ## Limitaciones conocidas
 
-Ninguna de estas es un descuido — son simplificaciones deliberadas con un techo conocido, no promesas de escala infinita:
+Ninguna de estas es un descuido — son simplificaciones deliberadas con un techo conocido:
 
-- **Bucket4j y el lock de reservas son en memoria** — válidos para una sola instancia. Escalar a réplicas necesita un rate limiter distribuido (Redis) y mover el chequeo de cupo a un `UPDATE` atómico condicionado en SQL.
-- **El webhook saliente es best-effort** — retry + circuit breaker, pero sin dead-letter queue. Si n8n está caído más allá de la ventana de retry, esa notificación puntual se pierde.
-- **El pago es simulado** — el webhook inbound confirma pagos como lo haría un gateway real, pero no hay integración con Mercado Pago/Stripe.
+- **Bucket4j y el lock de reservas son en memoria** — válidos para una sola instancia. Escalar a
+  réplicas necesita un rate limiter distribuido (Redis) y mover el chequeo de cupo a un `UPDATE`
+  atómico condicionado en SQL.
+- **El pago es simulado** — el webhook inbound confirma pagos como lo haría un gateway real, pero
+  no hay integración con Mercado Pago/Stripe (documentado a propósito, es un proyecto de portfolio).
+- **El webhook saliente es best-effort** — retry + circuit breaker, pero sin dead-letter queue. Si
+  n8n está caído más allá de la ventana de retry, esa notificación puntual se pierde.
+- **Una sola instancia de MySQL**, sin réplicas ni failover — coherente con el resto de las
+  limitaciones de infra de arriba.
+
+---
 
 ## Licencia
 
-Copyright (c) 2026 Mateo Pavoni. Todos los derechos reservados. Proyecto de portfolio para evaluación técnica — uso comercial prohibido sin permiso. Ver [LICENSE](./LICENSE).
+© 2026 Mateo Pavoni. Todos los derechos reservados. Software propietario, publicado solo con fines
+de evaluación/portfolio. Prohibida su copia, redistribución o reuso sin autorización escrita. Ver
+[LICENSE](./LICENSE).
