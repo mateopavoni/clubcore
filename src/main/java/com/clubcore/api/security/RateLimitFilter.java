@@ -41,8 +41,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Los buckets son locales a la JVM ({@link ConcurrentHashMap} en memoria). Si la aplicación
  * escala a múltiples instancias, cada instancia tiene su propio contador y el límite efectivo
  * se multiplica por el número de réplicas. Para escala horizontal, reemplazar el mapa local
- * por un {@code ProxyManager} de Bucket4j respaldado por Redis.
- * // ponytail: upgrade documentado — no es deuda oculta</p>
+ * por un {@code ProxyManager} de Bucket4j respaldado por Redis.</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -57,7 +56,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private final ObjectMapper objectMapper;
 
     // Un bucket por IP, un mapa por endpoint. computeIfAbsent es atómico en ConcurrentHashMap.
-    // ponytail: upgrade a Redis ProxyManager si se necesita compartir estado entre instancias.
+    // Escala a una sola instancia; para múltiples réplicas ver el upgrade path en el javadoc de la clase.
     private final ConcurrentHashMap<String, Bucket> loginBuckets   = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> webhookBuckets = new ConcurrentHashMap<>();
 

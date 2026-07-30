@@ -34,7 +34,7 @@ public class ReservaServiceImpl implements ReservaService {
     private final TransactionTemplate transactionTemplate;
 
     // Lock por cliente para el chequeo de cupo mensual — ver Javadoc de crearReserva().
-    // ponytail: en memoria, solo válido para una única instancia (la que corre hoy en la VPS).
+    // En memoria, solo válido para una única instancia (la que corre hoy en la VPS).
     // Si se escala a múltiples réplicas, hace falta un lock distribuido (ej. Redis) o mover el
     // conteo de cupo a un UPDATE atómico condicionado en SQL.
     private final ConcurrentHashMap<Long, Lock> clienteLocks = new ConcurrentHashMap<>();
