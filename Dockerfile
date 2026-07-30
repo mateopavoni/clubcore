@@ -1,7 +1,7 @@
 # ---------------------------------------------------------------
 # Stage 1: Build
 # ---------------------------------------------------------------
-FROM eclipse-temurin:21-jdk-jammy AS builder
+FROM eclipse-temurin:25-jdk-jammy AS builder
 
 WORKDIR /app
 
@@ -19,7 +19,7 @@ RUN ./gradlew bootJar --no-daemon --quiet -x test
 # ---------------------------------------------------------------
 # Stage 2: Runtime
 # ---------------------------------------------------------------
-FROM eclipse-temurin:21-jre-jammy AS runtime
+FROM eclipse-temurin:25-jre-jammy AS runtime
 
 WORKDIR /app
 
