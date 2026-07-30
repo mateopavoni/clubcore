@@ -56,7 +56,7 @@ dependencies {
 
     // Resilience4j — retry + circuit breaker en webhook saliente a n8n
     // Versión 2.2.x es la compatible con Spring Boot 3.2.x+
-    implementation("io.github.resilience4j:resilience4j-spring-boot3:2.2.0")
+    implementation("io.github.resilience4j:resilience4j-spring-boot3:2.4.0")
     // AOP es requisito de las anotaciones @Retry/@CircuitBreaker de Resilience4j
     implementation("org.springframework.boot:spring-boot-starter-aop")
 
