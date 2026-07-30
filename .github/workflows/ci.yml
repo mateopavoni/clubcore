@@ -74,3 +74,27 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+  deploy-dokku:
+    name: Deploy a Dokku (VPS)
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configurar SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DOKKU_SSH_KEY }}" > ~/.ssh/dokku_deploy
+          chmod 600 ~/.ssh/dokku_deploy
+          ssh-keyscan -H "${{ secrets.DOKKU_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Push a Dokku (dispara build + deploy en la VPS)
+        run: |
+          git remote add dokku "dokku@${{ secrets.DOKKU_HOST }}:${{ secrets.DOKKU_APP }}"
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/dokku_deploy" git push dokku HEAD:refs/heads/main --force
