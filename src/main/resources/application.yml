@@ -1,6 +1,11 @@
 spring:
   application:
     name: clubcore
+  cache:
+    cache-names: planes
+    caffeine:
+      # TTL corto: catálogo de baja escritura, no vale la pena invalidación fina
+      spec: maximumSize=500,expireAfterWrite=10m,recordStats
 
 springdoc:
   swagger-ui:

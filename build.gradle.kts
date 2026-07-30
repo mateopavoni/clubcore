@@ -67,6 +67,13 @@ dependencies {
     // Micrometer Prometheus — expone /actuator/prometheus para scraping
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
+    // Cache — catálogos de lectura pesada y baja escritura (planes)
+    implementation("org.springframework.boot:spring-boot-starter-cache")
+    implementation("com.github.ben-manes.caffeine:caffeine")
+
+    // Logging JSON estructurado (perfil prod) — legible por Docker/Loki/ELK
+    implementation("net.logstash.logback:logstash-logback-encoder:7.4")
+
     // Tests
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
