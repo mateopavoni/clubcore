@@ -8,6 +8,7 @@ import com.clubcore.api.exception.ResourceNotFoundException;
 import com.clubcore.api.mapper.RutinaMapper;
 import com.clubcore.api.repository.ClienteRepository;
 import com.clubcore.api.repository.RutinaRepository;
+import com.clubcore.api.security.AuthenticatedClienteResolver;
 import com.clubcore.api.service.RutinaService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -22,6 +23,7 @@ public class RutinaServiceImpl implements RutinaService {
     private final RutinaRepository rutinaRepository;
     private final ClienteRepository clienteRepository;
     private final RutinaMapper rutinaMapper;
+    private final AuthenticatedClienteResolver authenticatedClienteResolver;
 
     @Override
     @Transactional
@@ -42,12 +44,24 @@ public class RutinaServiceImpl implements RutinaService {
     @Override
     @Transactional(readOnly = true)
     public RutinaResponse obtenerRutina(Long id) {
-        return rutinaMapper.toResponse(findOrThrow(id));
+        Rutina rutina = findOrThrow(id);
+        // IDOR guard: un CLIENTE solo puede leer sus propias rutinas. 404 (no 403) para no
+        // filtrar, via el codigo de estado, que la rutina de otro cliente existe.
+        if (authenticatedClienteResolver.esClienteSinPrivilegios()
+                && !rutina.getCliente().getId().equals(authenticatedClienteResolver.clienteIdActual())) {
+            throw new ResourceNotFoundException("Rutina", "id", id);
+        }
+        return rutinaMapper.toResponse(rutina);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<RutinaResponse> listarRutinas(Pageable pageable) {
+        // IDOR guard: un CLIENTE solo ve sus propias rutinas, nunca las de otro cliente.
+        if (authenticatedClienteResolver.esClienteSinPrivilegios()) {
+            Long clienteId = authenticatedClienteResolver.clienteIdActual();
+            return rutinaRepository.findByClienteId(clienteId, pageable).map(rutinaMapper::toResponse);
+        }
         return rutinaRepository.findAll(pageable).map(rutinaMapper::toResponse);
     }
 

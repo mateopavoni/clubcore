@@ -18,8 +18,10 @@ import org.springframework.web.bind.annotation.*;
  * a este endpoint con la referencia y el estado, y ClubCore actualiza el registro
  * de pago y recalcula el estado de la membresía.</p>
  *
- * <p>Este endpoint NO requiere JWT para simular la llamada externa.
- * En producción se validaría con HMAC signature del gateway.</p>
+ * <p>Este endpoint NO requiere JWT para simular la llamada externa, pero SI exige una
+ * firma HMAC-SHA256 válida (header {@code X-Webhook-Signature}, verificada por
+ * {@link com.clubcore.api.security.WebhookSignatureFilter} antes de llegar acá) calculada
+ * con el secreto compartido {@code WEBHOOK_SIGNING_SECRET}. Sin firma válida, 401.</p>
  */
 @RestController
 @RequestMapping("/api/v1/webhooks")

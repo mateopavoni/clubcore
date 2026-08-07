@@ -18,6 +18,9 @@ jwt:
   secret: dGVzdC1zZWNyZXQta2V5LXRoYXQtaXMtbG9uZy1lbm91Z2gtZm9yLUhTMjU2LWFsZ29yaXRobQ==
   expiration-ms: 3600000
 
+webhook:
+  signing-secret: test-webhook-signing-secret-not-for-prod
+
 n8n:
   webhook-url: ""
 

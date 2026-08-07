@@ -44,7 +44,8 @@ El estado NO se persiste como campo mutable arbitrario: se recalcula on-demand a
 - JWT stateless: `JwtFilter` extrae el Bearer token, valida firma y expiracion, y establece el `SecurityContext`.
 - Roles (`ADMIN`, `ENTRENADOR`, `CLIENTE`) via `@PreAuthorize` a nivel de metodo, no solo en `SecurityConfig`. Esto hace el RBAC visible y explicito en el codigo.
 - Passwords con BCrypt(10).
-- Secrets solo por variable de entorno (`JWT_SECRET`, `DB_PASSWORD`).
+- Secrets solo por variable de entorno (`JWT_SECRET`, `DB_PASSWORD`, `WEBHOOK_SIGNING_SECRET`).
+- CORS acotado por `CORS_ALLOWED_ORIGINS` (lista explicita, sin wildcard+credentials) — obligatorio en perfil `prod`.
 
 ## Integraciones async
 
@@ -60,7 +61,7 @@ Job @Scheduled (8AM diario)
                     (fallback: loguea y absorbe — sigue siendo best-effort)
 ```
 
-El webhook inbound (`POST /api/v1/webhooks/pagos`) simula la confirmacion de un gateway externo → actualiza el Pago y recalcula el estado de la Membresia.
+El webhook inbound (`POST /api/v1/webhooks/pagos`) simula la confirmacion de un gateway externo → actualiza el Pago y recalcula el estado de la Membresia. No lleva JWT (el gateway no tiene uno nuestro), pero exige una firma HMAC-SHA256 valida (header `X-Webhook-Signature`, verificada por `WebhookSignatureFilter` contra `WEBHOOK_SIGNING_SECRET`) — sin firma valida, 401.
 
 ## Estructura de paquetes
 
@@ -134,11 +135,10 @@ MySQL 8.4. Migraciones Flyway:
 - Carga solo capa web + mocks de servicios. No instancia toda la app (mas rapido).
 - Trade-off: no prueba integracion real (DB, eventos async). Pero combinado con H2 en tests y MembresiaStateServiceTest, cubre lo importante.
 
-**Webhook inbound sin JWT**
-- `/api/v1/webhooks/pagos` es public (simula gateway externo). En produccion real:
-  - Validar HMAC signature del proveedor (llave compartida).
-  - Rate limit por IP.
-  - Logging y retry logic en Kafka/RabbitMQ si es critico.
+**Webhook inbound sin JWT, con firma HMAC**
+- `/api/v1/webhooks/pagos` es public a nivel de Spring Security (simula gateway externo, que no tiene un JWT nuestro), pero `WebhookSignatureFilter` exige un header `X-Webhook-Signature` con el HMAC-SHA256 (hex) del body crudo, calculado con el secreto compartido `WEBHOOK_SIGNING_SECRET`. La comparacion es constant-time (`MessageDigest.isEqual`). Sin firma valida (o sin secreto configurado), 401 — fail-closed.
+- Rate limit por IP ya cubierto por `RateLimitFilter` (20 req/min en `/api/v1/webhooks/**`).
+- Pendiente real: logging y retry logic en Kafka/RabbitMQ si el volumen se vuelve critico.
 
 **Estado cacheado vs recalculado**
 - `estadoCacheado` en entidad Membresia: copia derivada para queries de listado rapidas.

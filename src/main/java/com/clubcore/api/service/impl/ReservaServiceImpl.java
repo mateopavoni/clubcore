@@ -9,6 +9,7 @@ import com.clubcore.api.mapper.ReservaMapper;
 import com.clubcore.api.repository.ClienteRepository;
 import com.clubcore.api.repository.MembresiaRepository;
 import com.clubcore.api.repository.ReservaRepository;
+import com.clubcore.api.security.AuthenticatedClienteResolver;
 import com.clubcore.api.service.MembresiaStateService;
 import com.clubcore.api.service.ReservaService;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ public class ReservaServiceImpl implements ReservaService {
     private final MembresiaRepository membresiaRepository;
     private final ReservaMapper reservaMapper;
     private final MembresiaStateService membresiaStateService;
+    private final AuthenticatedClienteResolver authenticatedClienteResolver;
     private final TransactionTemplate transactionTemplate;
 
     // Lock por cliente para el chequeo de cupo mensual — ver Javadoc de crearReserva().
@@ -42,12 +44,14 @@ public class ReservaServiceImpl implements ReservaService {
     public ReservaServiceImpl(ReservaRepository reservaRepository, ClienteRepository clienteRepository,
                                MembresiaRepository membresiaRepository, ReservaMapper reservaMapper,
                                MembresiaStateService membresiaStateService,
+                               AuthenticatedClienteResolver authenticatedClienteResolver,
                                PlatformTransactionManager transactionManager) {
         this.reservaRepository = reservaRepository;
         this.clienteRepository = clienteRepository;
         this.membresiaRepository = membresiaRepository;
         this.reservaMapper = reservaMapper;
         this.membresiaStateService = membresiaStateService;
+        this.authenticatedClienteResolver = authenticatedClienteResolver;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -71,6 +75,13 @@ public class ReservaServiceImpl implements ReservaService {
      */
     @Override
     public ReservaResponse crearReserva(ReservaRequest request) {
+        // IDOR guard: un CLIENTE solo puede reservar para si mismo, nunca en nombre de otro
+        // clienteId arbitrario recibido en el body. ADMIN conserva acceso completo.
+        if (authenticatedClienteResolver.esClienteSinPrivilegios()
+                && !authenticatedClienteResolver.clienteIdActual().equals(request.clienteId())) {
+            throw new ResourceNotFoundException("Cliente", "id", request.clienteId());
+        }
+
         Lock lock = clienteLocks.computeIfAbsent(request.clienteId(), id -> new ReentrantLock());
         lock.lock();
         try {
@@ -106,7 +117,9 @@ public class ReservaServiceImpl implements ReservaService {
     @Override
     @Transactional(readOnly = true)
     public ReservaResponse obtenerReserva(Long id) {
-        return reservaMapper.toResponse(findOrThrow(id));
+        Reserva reserva = findOrThrow(id);
+        verificarPropiedad(reserva);
+        return reservaMapper.toResponse(reserva);
     }
 
     @Override
@@ -119,6 +132,7 @@ public class ReservaServiceImpl implements ReservaService {
     @Transactional
     public ReservaResponse cancelarReserva(Long id) {
         Reserva reserva = findOrThrow(id);
+        verificarPropiedad(reserva);
         reserva.setEstado(EstadoReserva.CANCELADA);
         return reservaMapper.toResponse(reservaRepository.save(reserva));
     }
@@ -126,5 +140,17 @@ public class ReservaServiceImpl implements ReservaService {
     private Reserva findOrThrow(Long id) {
         return reservaRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Reserva", "id", id));
+    }
+
+    /**
+     * IDOR guard: un CLIENTE solo puede leer/cancelar sus propias reservas. Se lanza
+     * {@link ResourceNotFoundException} (404) en vez de un 403 para no filtrar, via el
+     * codigo de estado, que la reserva de otro cliente existe.
+     */
+    private void verificarPropiedad(Reserva reserva) {
+        if (authenticatedClienteResolver.esClienteSinPrivilegios()
+                && !reserva.getCliente().getId().equals(authenticatedClienteResolver.clienteIdActual())) {
+            throw new ResourceNotFoundException("Reserva", "id", reserva.getId());
+        }
     }
 }

@@ -175,8 +175,8 @@ class MembresiaStateServiceTest {
         when(pagoRepository.existsByMembresiaAndEstado(membresia, EstadoPago.PENDIENTE))
                 .thenReturn(false);
         // 5 reservas este mes = límite exacto del plan
-        when(reservaRepository.countByClienteAndFechaReservaBetween(
-                eq(cliente), any(LocalDateTime.class), any(LocalDateTime.class)))
+        when(reservaRepository.countByClienteAndFechaReservaBetweenAndEstadoIn(
+                eq(cliente), any(LocalDateTime.class), any(LocalDateTime.class), any()))
                 .thenReturn(5L);
 
         EstadoMembresia resultado = service.evaluarEstado(membresia);
@@ -190,8 +190,8 @@ class MembresiaStateServiceTest {
         Membresia membresia = membresiaVigente(planConLimite);
         when(pagoRepository.existsByMembresiaAndEstado(membresia, EstadoPago.PENDIENTE))
                 .thenReturn(false);
-        when(reservaRepository.countByClienteAndFechaReservaBetween(
-                eq(cliente), any(LocalDateTime.class), any(LocalDateTime.class)))
+        when(reservaRepository.countByClienteAndFechaReservaBetweenAndEstadoIn(
+                eq(cliente), any(LocalDateTime.class), any(LocalDateTime.class), any()))
                 .thenReturn(4L); // por debajo del límite
         EstadoMembresia resultado = service.evaluarEstado(membresia);
 

@@ -2,6 +2,7 @@ package com.clubcore.api.service;
 
 import com.clubcore.api.entity.EstadoMembresia;
 import com.clubcore.api.entity.EstadoPago;
+import com.clubcore.api.entity.EstadoReserva;
 import com.clubcore.api.entity.Membresia;
 import com.clubcore.api.entity.Plan;
 import com.clubcore.api.event.MembresiaPorVencerEvent;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.List;
 
 /**
@@ -47,6 +49,13 @@ public class MembresiaStateService {
     private final ReservaRepository reservaRepository;
     private final MembresiaRepository membresiaRepository;
     private final ApplicationEventPublisher eventPublisher;
+
+    /**
+     * Estados de reserva que efectivamente ocupan cupo mensual. CANCELADA se excluye a
+     * proposito: cancelar una reserva debe liberar el cupo, no quemarlo permanentemente.
+     */
+    private static final EnumSet<EstadoReserva> ESTADOS_QUE_OCUPAN_CUPO =
+            EnumSet.of(EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA);
 
     /**
      * Calcula el estado real de la membresía sin modificar la base de datos.
@@ -84,8 +93,8 @@ public class MembresiaStateService {
             LocalDateTime inicioMes = hoy.withDayOfMonth(1).atStartOfDay();
             LocalDateTime finMes = inicioMes.plusMonths(1);
 
-            long reservasEsteMes = reservaRepository.countByClienteAndFechaReservaBetween(
-                    membresia.getCliente(), inicioMes, finMes
+            long reservasEsteMes = reservaRepository.countByClienteAndFechaReservaBetweenAndEstadoIn(
+                    membresia.getCliente(), inicioMes, finMes, ESTADOS_QUE_OCUPAN_CUPO
             );
 
             if (reservasEsteMes >= plan.getLimiteReservasMes()) {

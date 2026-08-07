@@ -7,6 +7,16 @@ spring:
       # TTL corto: catálogo de baja escritura, no vale la pena invalidación fina
       spec: maximumSize=500,expireAfterWrite=10m,recordStats
 
+# Firma HMAC del webhook inbound de pagos (ver WebhookSignatureFilter). Sin secreto, el
+# endpoint rechaza toda request con 401 — fail-closed, nunca abierto por defecto.
+webhook:
+  signing-secret: ${WEBHOOK_SIGNING_SECRET:}
+
+# Orígenes CORS permitidos (lista separada por comas). Ver SecurityConfig#corsConfigurationSource.
+# Sin esta variable: falla rápido en 'prod', cae a '*' (con warning) en cualquier otro perfil.
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html

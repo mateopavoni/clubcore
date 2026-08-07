@@ -3,11 +3,15 @@ package com.clubcore.api.config;
 import com.clubcore.api.dto.response.ApiErrorResponse;
 import com.clubcore.api.security.JwtFilter;
 import com.clubcore.api.security.RateLimitFilter;
+import com.clubcore.api.security.WebhookSignatureFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -23,6 +27,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -39,15 +44,22 @@ import java.util.List;
 @EnableWebSecurity
 @EnableMethodSecurity
 @RequiredArgsConstructor
+@Slf4j
 public class SecurityConfig {
 
-    private final JwtFilter        jwtFilter;
-    private final RateLimitFilter  rateLimitFilter;
-    private final ObjectMapper     objectMapper;
+    private final JwtFilter                jwtFilter;
+    private final RateLimitFilter          rateLimitFilter;
+    private final WebhookSignatureFilter   webhookSignatureFilter;
+    private final ObjectMapper             objectMapper;
+    private final Environment              environment;
+
+    /** {@code CORS_ALLOWED_ORIGINS}, coma-separado. Ver {@link #corsConfigurationSource()}. */
+    @Value("${cors.allowed-origins:}")
+    private String corsAllowedOriginsRaw;
 
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/v1/auth/**",
-            "/api/v1/webhooks/**",    // Inbound externo — validado por HMAC en producción
+            "/api/v1/webhooks/**",    // Inbound externo — sin JWT, pero exige firma HMAC (ver WebhookSignatureFilter)
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
@@ -81,13 +93,15 @@ public class SecurityConfig {
                         // esa excepción se lanza dentro del DispatcherServlet, no en la cadena de filtros.
                         .accessDeniedHandler((req, res, deniedException) ->
                                 writeError(res, HttpServletResponse.SC_FORBIDDEN, "Acceso denegado", req.getRequestURI())))
-                // Orden de filtros: RateLimitFilter → JwtFilter → UsernamePasswordAuthenticationFilter
-                // Ambos filtros se registran "antes de" UPAF. Al tener el mismo orden relativo,
-                // Java's stable sort preserva el orden de inserción: rateLimitFilter primero.
-                // addFilterBefore(f, JwtFilter.class) no funciona porque JwtFilter no es un
-                // filtro "conocido" de Spring Security (no está en FilterOrderRegistration).
+                // Orden de filtros: RateLimitFilter → JwtFilter → WebhookSignatureFilter →
+                // UsernamePasswordAuthenticationFilter. Los tres se registran "antes de" UPAF.
+                // Al tener el mismo orden relativo, Java's stable sort preserva el orden de
+                // inserción de este bloque. addFilterBefore(f, JwtFilter.class) no funciona
+                // porque JwtFilter no es un filtro "conocido" de Spring Security (no está en
+                // FilterOrderRegistration).
                 .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(webhookSignatureFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
@@ -119,18 +133,52 @@ public class SecurityConfig {
     }
 
     /**
-     * CORS: en producción se acota a los orígenes reales via la variable de entorno
-     * {@code CORS_ALLOWED_ORIGINS}. Esta configuración es permisiva solo para dev.
+     * CORS: los orígenes permitidos vienen de la variable de entorno {@code CORS_ALLOWED_ORIGINS}
+     * (lista separada por comas), usando {@code setAllowedOrigins} (lista explícita) — nunca
+     * {@code setAllowedOriginPatterns(List.of("*"))}, que es justamente lo que le permite a
+     * Spring Security saltarse su rechazo normal de "wildcard origin + credentials".
+     *
+     * <p>Si la variable no está seteada:</p>
+     * <ul>
+     *   <li>Perfil {@code prod}: falla rápido en el arranque (bean no se puede construir) —
+     *       mejor un deploy roto y visible que CORS abierto en producción sin que nadie lo note.</li>
+     *   <li>Cualquier otro perfil (dev/test): cae a {@code "*"} vía {@code setAllowedOriginPatterns}
+     *       (única combinación válida con credentials + wildcard) y loguea un warning.</li>
+     * </ul>
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
+
+        List<String> allowedOrigins = parseAllowedOrigins(corsAllowedOriginsRaw);
+
+        if (allowedOrigins.isEmpty()) {
+            if (environment.matchesProfiles("prod")) {
+                throw new IllegalStateException(
+                        "CORS_ALLOWED_ORIGINS no está configurado. En el perfil 'prod' es obligatorio " +
+                        "definir explícitamente los orígenes permitidos (no se admite '*' con credenciales).");
+            }
+            log.warn("CORS_ALLOWED_ORIGINS no configurado — usando '*' solo por no estar en perfil 'prod'");
+            config.setAllowedOriginPatterns(List.of("*"));
+        } else {
+            config.setAllowedOrigins(allowedOrigins);
+        }
+
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
+    }
+
+    private List<String> parseAllowedOrigins(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(origen -> !origen.isEmpty())
+                .toList();
     }
 }
