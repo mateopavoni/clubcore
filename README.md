@@ -6,7 +6,7 @@
 > alguien lo consulta y el momento en que hace check-in. Motor de estados on-demand, seguridad
 > JWT+RBAC, y una garantía de concurrencia que se puede verificar con un test, no solo prometer.
 
-[![demo](https://img.shields.io/badge/demo-live-brightgreen)](https://api.clubcore.mateopavoni.com.ar/swagger-ui.html)
+[![demo](https://img.shields.io/badge/demo-live-brightgreen)](https://clubcore-api.mateopavoni.com.ar/swagger-ui.html)
 ![stack](https://img.shields.io/badge/stack-Java%2021%20·%20Spring%20Boot%20·%20MySQL%20·%20Docker-2b2b2b) · ![license](https://img.shields.io/badge/license-proprietary-red)
 
 Stack: **Java 21 · Spring Boot 3.3 · MySQL 8 · Resilience4j/Bucket4j · Docker**
@@ -18,7 +18,7 @@ Swagger interactivo contra la API real. Podés loguearte con una cuenta de clien
 (rol acotado a sus propios datos, no administrativo) y probar reservas/check-in en vivo:
 
 ```
-POST https://api.clubcore.mateopavoni.com.ar/api/v1/auth/login
+POST https://clubcore-api.mateopavoni.com.ar/api/v1/auth/login
 cliente1@clubcore.com / Admin1234!
 ```
 
