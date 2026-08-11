@@ -11,9 +11,9 @@
 
 Stack: **Java 21 · Spring Boot 3.3 · MySQL 8 · Resilience4j/Bucket4j · Docker**
 
-### 🔗 Demo en vivo
+### Demo en vivo
 
-**[api.clubcore.mateopavoni.com.ar](https://api.clubcore.mateopavoni.com.ar/swagger-ui.html)** —
+**[clubcore-api.mateopavoni.com.ar](https://clubcore-api.mateopavoni.com.ar/swagger-ui.html)** —
 Swagger interactivo contra la API real. Podés loguearte con una cuenta de cliente ya cargada
 (rol acotado a sus propios datos, no administrativo) y probar reservas/check-in en vivo:
 
