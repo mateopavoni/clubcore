@@ -3,7 +3,7 @@ plugins {
     id("org.springframework.boot") version "3.5.16"
     id("io.spring.dependency-management") version "1.1.7"
     // Expone commit/branch/build-time en /actuator/info
-    id("com.gorylenko.gradle-git-properties") version "2.4.2"
+    id("com.gorylenko.gradle-git-properties") version "2.5.7"
 }
 
 group = "com.clubcore"
