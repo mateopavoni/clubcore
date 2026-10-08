@@ -48,9 +48,9 @@ dependencies {
     annotationProcessor("org.projectlombok:lombok")
 
     // MapStruct — el binding de Lombok debe ir ANTES del processor de MapStruct
-    implementation("org.mapstruct:mapstruct:1.5.5.Final")
+    implementation("org.mapstruct:mapstruct:1.6.3")
     annotationProcessor("org.projectlombok:lombok-mapstruct-binding:0.2.0")
-    annotationProcessor("org.mapstruct:mapstruct-processor:1.5.5.Final")
+    annotationProcessor("org.mapstruct:mapstruct-processor:1.6.3")
 
     // JWT
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
