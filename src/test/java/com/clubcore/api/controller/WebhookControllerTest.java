@@ -20,6 +20,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.HexFormat;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -69,7 +70,8 @@ class WebhookControllerTest {
 
         mockMvc.perform(post("/api/v1/webhooks/pagos")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .header("X-Webhook-Signature", firmar(BODY))
+                        .header("X-Webhook-Timestamp", ahora())
+                        .header("X-Webhook-Signature", firmar(ahora(), BODY))
                         .content(BODY))
                 .andExpect(status().isOk());
     }
@@ -88,6 +90,7 @@ class WebhookControllerTest {
     void firmaInvalida_devuelve401() throws Exception {
         mockMvc.perform(post("/api/v1/webhooks/pagos")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Webhook-Timestamp", ahora())
                         .header("X-Webhook-Signature", "0".repeat(64))
                         .content(BODY))
                 .andExpect(status().isUnauthorized());
@@ -101,14 +104,76 @@ class WebhookControllerTest {
 
         mockMvc.perform(post("/api/v1/webhooks/pagos")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .header("X-Webhook-Signature", firmar(otroBody))
+                        .header("X-Webhook-Timestamp", ahora())
+                        .header("X-Webhook-Signature", firmar(ahora(), otroBody))
                         .content(BODY))
                 .andExpect(status().isUnauthorized());
     }
 
-    private String firmar(String body) throws Exception {
+    @Test
+    @DisplayName("Replay: una request válida pero vieja (fuera de la ventana de 5 min) se rechaza con 401")
+    void requestVieja_devuelve401() throws Exception {
+        String viejo = String.valueOf(Instant.now().minusSeconds(600).getEpochSecond());
+
+        mockMvc.perform(post("/api/v1/webhooks/pagos")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Webhook-Timestamp", viejo)
+                        .header("X-Webhook-Signature", firmar(viejo, BODY))
+                        .content(BODY))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Replay: cambiar el timestamp de una request capturada invalida la firma (401)")
+    void timestampAlteradoConFirmaAjena_devuelve401() throws Exception {
+        String capturado = String.valueOf(Instant.now().minusSeconds(600).getEpochSecond());
+
+        mockMvc.perform(post("/api/v1/webhooks/pagos")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Webhook-Timestamp", ahora())
+                        .header("X-Webhook-Signature", firmar(capturado, BODY))
+                        .content(BODY))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Sin header de timestamp, rechaza con 401 aunque la firma sea del body solo")
+    void sinTimestamp_devuelve401() throws Exception {
+        mockMvc.perform(post("/api/v1/webhooks/pagos")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Webhook-Signature", firmarSoloBody(BODY))
+                        .content(BODY))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Un body mayor al tope se rechaza con 413 antes de leerlo entero")
+    void bodyGigante_devuelve413() throws Exception {
+        String enorme = "{\"referencia\":\"" + "a".repeat(70_000) + "\"}";
+
+        mockMvc.perform(post("/api/v1/webhooks/pagos")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Webhook-Timestamp", ahora())
+                        .header("X-Webhook-Signature", firmar(ahora(), enorme))
+                        .content(enorme))
+                .andExpect(status().isPayloadTooLarge());
+    }
+
+    /** Esquema anterior (solo el body): ya no se acepta. */
+    private String firmarSoloBody(String body) throws Exception {
         Mac mac = Mac.getInstance(HMAC_ALGORITHM);
         mac.init(new SecretKeySpec(signingSecret.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
         return HexFormat.of().formatHex(mac.doFinal(body.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private static String ahora() {
+        return String.valueOf(Instant.now().getEpochSecond());
+    }
+
+    /** El gateway firma "<timestamp>.<body>" con HMAC-SHA256. */
+    private String firmar(String timestamp, String body) throws Exception {
+        Mac mac = Mac.getInstance(HMAC_ALGORITHM);
+        mac.init(new SecretKeySpec(signingSecret.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
+        return HexFormat.of().formatHex(mac.doFinal((timestamp + "." + body).getBytes(StandardCharsets.UTF_8)));
     }
 }
