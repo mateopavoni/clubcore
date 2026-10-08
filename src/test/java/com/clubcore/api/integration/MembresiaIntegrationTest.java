@@ -78,7 +78,7 @@ class MembresiaIntegrationTest {
         // Sobreescribe el create-drop y Flyway disabled del perfil test
         registry.add("spring.jpa.hibernate.ddl-auto",                () -> "validate");
         registry.add("spring.flyway.enabled",                        () -> "true");
-        registry.add("spring.flyway.locations",                      () -> "classpath:db/migration");
+        registry.add("spring.flyway.locations",                      () -> "classpath:db/migration,classpath:db/seed");
     }
 
     @Autowired private PlanRepository       planRepo;

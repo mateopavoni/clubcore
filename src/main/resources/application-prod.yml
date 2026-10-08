@@ -31,3 +31,18 @@ logging:
   level:
     root: WARN
     com.clubcore: INFO
+
+# Hardening de producción: Swagger UI (con try-it-out) y /v3/api-docs exponen todo el contrato de la
+# API, y /actuator/info publica el commit y el build. En prod quedan apagados salvo que se pida
+# explícitamente con SWAGGER_ENABLED=true; en dev y en el compose local siguen disponibles.
+springdoc:
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,metrics

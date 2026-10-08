@@ -14,7 +14,9 @@ spring:
         format_sql: true
   flyway:
     enabled: true
-    locations: classpath:db/migration
+    # db/seed trae usuarios/planes/clientes de demo (con contraseña pública): SOLO en dev.
+    # El perfil prod no la incluye, así que una base nueva en producción queda sin usuarios.
+    locations: classpath:db/migration,classpath:db/seed
     baseline-on-migrate: true
 
 jwt:
