@@ -68,7 +68,7 @@ dependencies {
 
     // Bucket4j — rate limiting en endpoints públicos (login + webhooks inbound)
     // Artefacto jdk17-core: sin dependencias de Redis/Ignite, solo el núcleo para JDK 17+
-    implementation("com.bucket4j:bucket4j_jdk17-core:8.19.0")
+    implementation("com.bucket4j:bucket4j_jdk17-core:8.21.0")
 
     // Micrometer Prometheus — expone /actuator/prometheus para scraping
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
