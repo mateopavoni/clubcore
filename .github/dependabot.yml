@@ -4,6 +4,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Spring Boot 3.3 -> 4, springdoc 2 -> 3, Testcontainers 1 -> 2, etc. son migraciones, no
+    # actualizaciones: se hacen a mano, no con un PR automático. Parches y menores sí entran.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
@@ -14,3 +19,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
