@@ -4,6 +4,8 @@ import com.clubcore.api.dto.response.ApiErrorResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,7 +21,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Filtro de rate limiting aplicado sobre los endpoints públicos sin autenticación.
@@ -55,10 +56,22 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private final ObjectMapper objectMapper;
 
-    // Un bucket por IP, un mapa por endpoint. computeIfAbsent es atómico en ConcurrentHashMap.
-    // Escala a una sola instancia; para múltiples réplicas ver el upgrade path en el javadoc de la clase.
-    private final ConcurrentHashMap<String, Bucket> loginBuckets   = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Bucket> webhookBuckets = new ConcurrentHashMap<>();
+    /** Tope de IPs distintas recordadas por endpoint: acota la memoria ante un barrido de IPs. */
+    private static final long MAX_TRACKED_IPS = 100_000;
+
+    // Un bucket por IP, un caché por endpoint. A diferencia de un ConcurrentHashMap, el caché
+    // expira las entradas inactivas (el bucket de una IP que no vuelve ya está recargado) y tiene
+    // tope de tamaño, así que no crece sin límite. Escala a una sola instancia; para múltiples
+    // réplicas ver el upgrade path en el javadoc de la clase.
+    private final Cache<String, Bucket> loginBuckets   = newBucketCache();
+    private final Cache<String, Bucket> webhookBuckets = newBucketCache();
+
+    private static Cache<String, Bucket> newBucketCache() {
+        return Caffeine.newBuilder()
+                .maximumSize(MAX_TRACKED_IPS)
+                .expireAfterAccess(Duration.ofMinutes(10))
+                .build();
+    }
 
     @Override
     protected void doFilterInternal(
@@ -92,12 +105,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
      */
     private Bucket resolveBucket(String path, String clientIp) {
         if ("/api/v1/auth/login".equals(path)) {
-            return loginBuckets.computeIfAbsent(clientIp,
-                    ip -> buildBucket(LOGIN_CAPACITY));
+            return loginBuckets.get(clientIp, ip -> buildBucket(LOGIN_CAPACITY));
         }
         if (path.startsWith("/api/v1/webhooks/")) {
-            return webhookBuckets.computeIfAbsent(clientIp,
-                    ip -> buildBucket(WEBHOOK_CAPACITY));
+            return webhookBuckets.get(clientIp, ip -> buildBucket(WEBHOOK_CAPACITY));
         }
         return null;
     }
@@ -118,15 +129,16 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Extrae la IP real del cliente. Respeta el header {@code X-Forwarded-For}
-     * presente cuando la app corre detrás de un reverse proxy (Nginx/Dokku).
+     * IP del cliente tal como la ve el contenedor de servlets ({@code getRemoteAddr()}).
+     *
+     * <p>Antes se tomaba el primer valor de {@code X-Forwarded-For}, pero ese header lo controla
+     * quien hace la request: mandando uno distinto en cada intento cada valor caía en un bucket
+     * nuevo y el límite de fuerza bruta del login no se aplicaba nunca. Detrás de un reverse proxy
+     * propio, la IP real se resuelve de forma segura configurando
+     * {@code server.forward-headers-strategy} (ver {@code application.yml}), que solo confía en
+     * el header cuando la conexión viene de un proxy interno.</p>
      */
     private String extractClientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            // El primer elemento es la IP original del cliente
-            return xff.split(",")[0].trim();
-        }
         return request.getRemoteAddr();
     }
 

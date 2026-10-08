@@ -9,6 +9,12 @@ spring:
 
 # Firma HMAC del webhook inbound de pagos (ver WebhookSignatureFilter). Sin secreto, el
 # endpoint rechaza toda request con 401 — fail-closed, nunca abierto por defecto.
+server:
+  # `none` (por defecto): se ignora X-Forwarded-For. Detrás de un reverse proxy propio usar
+  # FORWARD_HEADERS_STRATEGY=native: Tomcat solo confía en el header si la conexión viene de un
+  # proxy interno (loopback/redes privadas), y el rate limit ve la IP real del cliente.
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:none}
+
 webhook:
   signing-secret: ${WEBHOOK_SIGNING_SECRET:}
 
