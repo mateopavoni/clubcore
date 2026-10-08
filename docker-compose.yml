@@ -1,3 +1,8 @@
+# Entorno local completo: `docker compose up --build` y abrir http://localhost:8080/swagger-ui.html
+#
+# Levanta MySQL 8.4 + la API (perfil `dev`, con los datos demo de db/seed). No hace falta crear un
+# .env: los valores por defecto de abajo son SOLO para uso local. Si tu .env define alguna de estas
+# variables, tiene prioridad.
 services:
   mysql:
     image: mysql:8.4
@@ -5,18 +10,41 @@ services:
     environment:
       MYSQL_DATABASE: clubcore_db
       MYSQL_USER: ${DB_USERNAME:-clubcore_user}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
-    ports:
-      - "3306:3306"
+      MYSQL_PASSWORD: ${DB_PASSWORD:-clubcore_local_pw}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-clubcore_root_local_pw}
+    # Sin `ports:` a proposito: solo la API (red interna de compose) habla con la base.
+    # Para inspeccionarla: docker compose exec mysql mysql -u root -p clubcore_db
     volumes:
       - clubcore_mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
       start_period: 30s
+    restart: unless-stopped
+
+  app:
+    build: .
+    container_name: clubcore-app
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      # `dev` incluye db/seed (usuarios, planes y clientes de demo). El perfil `prod` NO los carga.
+      SPRING_PROFILES_ACTIVE: dev
+      # El perfil dev apunta a localhost; dentro de compose la base es el servicio `mysql`.
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/clubcore_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=America/Argentina/Cordoba
+      DB_USERNAME: ${DB_USERNAME:-clubcore_user}
+      DB_PASSWORD: ${DB_PASSWORD:-clubcore_local_pw}
+      # Secretos de uso local, generados para este compose. Cambialos si lo expones fuera de tu maquina.
+      JWT_SECRET: ${JWT_SECRET:-q30xy7dZoFUfbbxc2w+/QYdRNexGtE4iAC/j+pVA0XfWGvkNNIcxMjN9ipVqEkAl}
+      WEBHOOK_SIGNING_SECRET: ${WEBHOOK_SIGNING_SECRET:-2992edd542c9840d6968e756136bc71dc17a424edd7b3d43}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080}
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-}
+    # Solo loopback: el perfil dev tiene usuarios demo con contrasena publica.
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
     restart: unless-stopped
 
 volumes:

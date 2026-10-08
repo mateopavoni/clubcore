@@ -38,3 +38,10 @@ MANUAL-PRUEBAS.md
 PORTFOLIO.md
 commit-plan.md
 commit-plan.sh
+
+# Cache de Gradle cuando se corre dentro de Docker
+.gradle-docker/
+
+# Cualquier .env.* salvo la plantilla
+.env.*
+!.env.example
