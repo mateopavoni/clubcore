@@ -2,36 +2,46 @@
 
 ## Requisitos
 
-- Docker y Docker Compose
-- Java 21 (JDK — para `./gradlew bootRun`)
-- O solo Docker (para el build en contenedor)
+- Docker y Docker Compose v2. **Es lo único que hace falta**: ni JDK ni MySQL en el host.
+- Puerto `8080` libre (o `APP_PORT=8090 docker compose up --build`).
+- Internet la primera vez (imágenes base y dependencias de Gradle).
 
-## Variables de entorno
-
-```bash
-cp .env.example .env
-```
-
-Completar en `.env`:
-- `DB_PASSWORD` — contrasena de MySQL para el usuario `clubcore_user`
-- `DB_ROOT_PASSWORD` — contrasena root de MySQL
-- `JWT_SECRET` — string Base64 de 64+ bytes. Generar con: `openssl rand -base64 64`
-
-## Levantar (dev)
+## Levantar todo (MySQL + API)
 
 ```bash
-# 1. Levantar MySQL
-docker-compose up -d
-
-# 2. Correr la aplicacion (Flyway aplica las migraciones automaticamente)
-./gradlew bootRun
-
-# O con el perfil explicitamente:
-SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun
+docker compose up --build
 ```
 
-- API: http://localhost:8080
-- Swagger UI: http://localhost:8080/swagger-ui.html
+- API: http://localhost:8080 — Swagger UI: http://localhost:8080/swagger-ui.html
+- No hace falta `.env`: el compose trae valores por defecto **solo para uso local** (contraseñas de la base,
+  `JWT_SECRET`, `WEBHOOK_SIGNING_SECRET`). Si definís alguna en un `.env` (copiá `.env.example`), tiene prioridad.
+- Corre el perfil `dev`: Flyway aplica `db/migration` (schema) y `db/seed` (datos demo).
+- La base **no publica puertos** y la API solo escucha en `127.0.0.1`.
+- `docker compose ps` muestra `healthy` cuando está lista. `docker compose down -v` borra también la base.
+
+Para correr la API desde Gradle (necesita JDK 21 y un MySQL en `localhost:3306`): `./gradlew bootRun`
+con `DB_PASSWORD` y `JWT_SECRET` en el entorno.
+
+### Variables útiles
+| Variable | Para qué |
+|---|---|
+| `APP_PORT` | Puerto del host (por defecto 8080) |
+| `WEBHOOK_SIGNING_SECRET` | Secreto del webhook inbound de pagos |
+| `FORWARD_HEADERS_STRATEGY=native` | Solo detrás de un reverse proxy propio: el rate limit usa `X-Forwarded-For` únicamente si la conexión viene de un proxy interno |
+| `SWAGGER_ENABLED=true` | Solo en `prod`: vuelve a habilitar Swagger (apagado por defecto) |
+| `CORS_ALLOWED_ORIGINS` | Obligatoria en `prod` |
+
+### Webhook de pagos (cómo firmarlo)
+`POST /api/v1/webhooks/pagos` exige dos headers: `X-Webhook-Timestamp` (epoch en segundos, ±5 min) y
+`X-Webhook-Signature` = HMAC-SHA256 hex de `"<timestamp>.<body>"` con `WEBHOOK_SIGNING_SECRET`.
+Body máximo: 64 KB.
+
+```bash
+TS=$(date +%s); BODY='{"referencia":"EVT-1","membresiaId":1,"monto":15000,"estado":"PAGADO"}'
+SIG=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SIGNING_SECRET" -hex | sed 's/^.* //')
+curl -X POST http://localhost:8080/api/v1/webhooks/pagos -H 'Content-Type: application/json' \
+  -H "X-Webhook-Timestamp: $TS" -H "X-Webhook-Signature: $SIG" -d "$BODY"
+```
 
 ## Tests
 
@@ -75,19 +85,15 @@ Detalles del comando:
 > los tests de Testcontainers fallan con `DockerClientException` o timeout. En ese caso
 > excluir la suite de integración con `-x integrationTest` o un tag de JUnit 5 separado.
 
-## Build Docker
+## Build de la imagen suelta
 
 ```bash
 docker build -t clubcore:latest .
-docker run -p 8080:8080 \
-  -e DB_URL=jdbc:mysql://... \
-  -e DB_USERNAME=clubcore_user \
-  -e DB_PASSWORD=... \
-  -e JWT_SECRET=... \
-  clubcore:latest
 ```
+Para producción el perfil `prod` exige `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET` y `CORS_ALLOWED_ORIGINS`;
+no carga datos demo y no expone Swagger ni `/actuator/info`.
 
-## Usuarios seed (disponibles con docker-compose up + bootRun)
+## Usuarios demo (solo perfil dev: `docker compose up`)
 
 | Email                      | Contrasena  | Rol        |
 |----------------------------|-------------|------------|
@@ -95,4 +101,4 @@ docker run -p 8080:8080 \
 | entrenador@clubcore.com    | Admin1234!  | ENTRENADOR |
 | cliente1@clubcore.com      | Admin1234!  | CLIENTE    |
 
-Nota: el hash en V2__seed_roles.sql es BCrypt(10) de "Admin1234!", generado y verificado con `htpasswd`.
+Nota: el hash en `db/seed/V2__seed_roles.sql` es BCrypt(10) de "Admin1234!", generado y verificado con `htpasswd`.

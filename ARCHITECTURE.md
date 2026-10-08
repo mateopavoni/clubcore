@@ -86,7 +86,7 @@ com.clubcore.api/
 
 MySQL 8.4. Migraciones Flyway:
 - `V1__init_schema.sql` — crea todas las tablas e indices
-- `V2__seed_roles.sql` — inserta usuarios seed (admin/entrenador/cliente) y planes de ejemplo
+- `db/seed/V2__seed_roles.sql` — datos demo (usuarios admin/entrenador/cliente con contraseña pública y planes de ejemplo). Vive fuera de `db/migration` y **solo el perfil `dev` la carga** (`spring.flyway.locations`): una base nueva en `prod` queda sin usuarios.
 
 ## Flujo de request HTTP (ejemplo: crear reserva)
 
@@ -128,7 +128,7 @@ MySQL 8.4. Migraciones Flyway:
 
 **H2 en tests + Testcontainers en paralelo**
 - Suite H2 (perfil `test`, sin Flyway) — tests unitarios y de controller, rápidos, sin Docker.
-- `MembresiaIntegrationTest` (Testcontainers, MySQL 8.4 real) — verifica Flyway V1+V2 y el motor de estados contra el mismo engine de producción. Se corre en el mismo `./gradlew test`, requiere Docker disponible.
+- `MembresiaIntegrationTest` (Testcontainers, MySQL 8.4 real) — verifica Flyway V1+V2 (con `db/seed`) y el motor de estados contra el mismo engine de producción. Se corre en el mismo `./gradlew test`, requiere Docker disponible.
 - Coexistencia: `@DynamicPropertySource` sobreescribe las props H2 del perfil `test` con las del contenedor MySQL. Las dos suites comparten el mismo run pero con contextos independientes.
 
 **@WebMvcTest para controllers**
@@ -171,7 +171,7 @@ usuarios ──1:1── clientes
 
 `/actuator/prometheus` expone métricas Micrometer en formato Prometheus (scraping via Grafana/Prometheus).
 Requiere rol `ADMIN` — no es un endpoint público (protegido en `SecurityConfig`).
-`/actuator/health` sigue público para el healthcheck de Docker/Dokku.
+`/actuator/health` sigue público para el healthcheck de Docker.
 
 Métricas disponibles con spring-boot-starter-actuator + micrometer-registry-prometheus:
 - JVM (heap, GC, threads)
@@ -188,3 +188,8 @@ Métricas disponibles con spring-boot-starter-actuator + micrometer-registry-pro
 - **Rate limiting en escala horizontal:** Bucket4j actualmente en memoria por JVM. Migrar a Redis ProxyManager cuando se agreguen réplicas (ver `RateLimitFilter`).
 - **Two-factor en login:** para ADMIN critico.
 - **Versionado de API:** rutas `/api/v2/...` si hay breaking changes futuros.
+
+## Seguridad: endurecimientos (2026-10-08)
+- **Rate limit por IP real de la conexión.** `RateLimitFilter` usa `getRemoteAddr()`; antes confiaba en el primer valor de `X-Forwarded-For`, que lo controla quien hace la request, y rotarlo evadía el límite de 5 logins/min. Los buckets viven en un caché Caffeine con expiración y tope (100.000 IPs), no en un mapa que crecía sin límite. Detrás de un proxy propio: `FORWARD_HEADERS_STRATEGY=native`.
+- **Webhook inbound firmado con timestamp.** La firma HMAC-SHA256 cubre `"<X-Webhook-Timestamp>.<body>"` y se rechaza lo que cae fuera de ±5 min. Antes cubría solo el body: reenviar un `PAGADO` capturado revertía un pago que después pasó a `FALLIDO`. El body se lee con tope de 64 KB (413 si lo excede).
+- **Datos demo solo en `dev`** (ver arriba) y, en `prod`, Swagger/`/v3/api-docs` y `/actuator/info` apagados salvo `SWAGGER_ENABLED=true`.

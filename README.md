@@ -6,24 +6,21 @@
 > alguien lo consulta y el momento en que hace check-in. Motor de estados on-demand, seguridad
 > JWT+RBAC, y una garantía de concurrencia que se puede verificar con un test, no solo prometer.
 
-[![demo](https://img.shields.io/badge/demo-live-brightgreen)](https://clubcore-api.mateopavoni.com.ar/swagger-ui.html)
+![estado](https://img.shields.io/badge/estado-archivado-lightgrey)
 ![stack](https://img.shields.io/badge/stack-Java%2021%20·%20Spring%20Boot%20·%20MySQL%20·%20Docker-2b2b2b) · ![license](https://img.shields.io/badge/license-proprietary-red)
 
-Stack: **Java 21 · Spring Boot 3.3 · MySQL 8 · Resilience4j/Bucket4j · Docker**
+Stack: **Java 21 · Spring Boot 3.5 · MySQL 8 · Resilience4j/Bucket4j · Docker**
 
-### Demo en vivo
+### Estado: archivado
 
-**[clubcore-api.mateopavoni.com.ar](https://clubcore-api.mateopavoni.com.ar/swagger-ui.html)** —
-Swagger interactivo contra la API real. Podés loguearte con una cuenta de cliente ya cargada
-(rol acotado a sus propios datos, no administrativo) y probar reservas/check-in en vivo:
+La demo pública y su deploy fueron dados de baja: el proyecto ya no está desplegado en ningún lado.
+Se corre completo en local, con la base de datos y datos demo cargados, con un solo comando:
 
-```
-POST https://clubcore-api.mateopavoni.com.ar/api/v1/auth/login
-cliente1@clubcore.com / Admin1234!
+```bash
+docker compose up --build
 ```
 
-`/actuator/health` público si solo querés confirmar que está viva. Deployado en una VPS propia
-vía **Dokku**. Deploy automático en cada push a `main` (`.github/workflows/ci.yml`).
+Después abrí http://localhost:8080/swagger-ui.html (ver [Cómo correr](#cómo-correr)).
 
 ---
 
@@ -59,19 +56,19 @@ rechazo limpio, no una reserva fantasma.
 - **JWT + RBAC de punta a punta** — roles ADMIN/ENTRENADOR/CLIENTE vía `@PreAuthorize` por endpoint,
   contraseñas con BCrypt.
 - **Webhooks resilientes** — retry + circuit breaker (Resilience4j) en el webhook saliente a n8n;
-  webhook inbound de pagos simulando confirmación de gateway externo.
+  webhook inbound de pagos simulando confirmación de gateway externo (firma HMAC sobre
+  `timestamp.body`, ventana de 5 min contra replay, body acotado a 64 KB).
 - **Rate limiting distribuible en el diseño** — Bucket4j en login (5/min) y webhooks (20/min) por IP.
 - **Cache Caffeine** en el catálogo de planes (baja escritura, alta lectura), con métricas de
   hit/miss reales vía Actuator.
-- **Observabilidad de producción** — `/actuator/prometheus` y `/actuator/metrics` gateados a ADMIN,
-  `/actuator/info` con commit real desplegado, logging JSON estructurado en `prod`.
-- **CI/CD real** — test → build de imagen a GHCR → deploy automático a Dokku en cada push a `main`.
+- **Observabilidad** — `/actuator/prometheus` y `/actuator/metrics` gateados a ADMIN, `/actuator/health`
+  público, logging JSON estructurado en `prod`. En `prod` Swagger y `/actuator/info` quedan apagados.
+- **CI** — GitHub Actions corre build + tests en cada push a `main`.
 
 ### En números
 
-**27 tests** (unitarios + integración con Testcontainers contra MySQL 8.4 real) · test de
-concurrencia real (10 requests paralelas contra cupo=1, 0 reservas de más) · deploy en producción
-con CI/CD propio (push a `main` → test → imagen a GHCR → deploy a Dokku) · 9 controllers, 8
+**53 tests** (unitarios + integración con Testcontainers contra MySQL 8.4 real) · test de
+concurrencia real (10 requests paralelas contra cupo=1, 0 reservas de más) · CI propio en GitHub Actions (build + tests en cada push a `main`) · 9 controllers, 8
 capas de servicio, arquitectura completa controller→service→repository.
 
 ---
@@ -110,7 +107,8 @@ clubcore/
 │   ├── event/              MembresiaPorVencerEvent (job @Scheduled diario)
 │   └── exception/          GlobalExceptionHandler, sin stack traces al cliente
 ├── src/main/resources/
-│   └── db/migration/       Flyway V1 (schema) + V2 (seed)
+│   ├── db/migration/       Flyway V1 (schema) — corre en todos los perfiles
+│   └── db/seed/            V2 datos demo (usuarios con contraseña pública) — SOLO perfil dev
 ├── docker-compose.yml
 ├── Dockerfile
 └── ARCHITECTURE.md
@@ -121,15 +119,13 @@ clubcore/
 ## Cómo correr
 
 ```bash
-git clone <repo> clubcore && cd clubcore
-cp .env.example .env   # completar DB_PASSWORD, DB_ROOT_PASSWORD, JWT_SECRET
-
-docker-compose up -d   # MySQL 8 en contenedor
-./gradlew bootRun       # Flyway migra automáticamente
+git clone https://github.com/mateopavoni/clubcore.git && cd clubcore
+docker compose up --build     # MySQL 8.4 + la API; no hace falta crear un .env
 ```
 
-- API: http://localhost:8080
-- Swagger UI: http://localhost:8080/swagger-ui.html
+- API: http://localhost:8080 — Swagger UI: http://localhost:8080/swagger-ui.html
+- Es el perfil `dev`: Flyway carga también los datos demo de `db/seed`. Los secretos del compose son
+  de uso local; la base no publica puertos y la API solo escucha en `127.0.0.1`.
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/auth/login \
@@ -137,9 +133,9 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
   -d '{"email":"admin@clubcore.com","password":"Admin1234!"}'
 ```
 
-Usuarios seed (`Admin1234!` para los tres): `admin@clubcore.com` (ADMIN),
-`entrenador@clubcore.com` (ENTRENADOR), `cliente1@clubcore.com` (CLIENTE). Más detalle en
-[RUN.md](RUN.md).
+Usuarios demo (`Admin1234!` para los tres, **solo en dev**): `admin@clubcore.com` (ADMIN),
+`entrenador@clubcore.com` (ENTRENADOR), `cliente1@clubcore.com` (CLIENTE). El perfil `prod` no crea
+ningún usuario. Más detalle en [RUN.md](RUN.md).
 
 ---
 
@@ -168,7 +164,7 @@ Resultado
 ## Tests
 
 ```bash
-./gradlew test     # 27 tests, H2 en memoria, sin Docker
+./gradlew test     # necesita Docker: el test de integración levanta MySQL con Testcontainers
 ```
 
 La suite cubre el motor de estados (10 casos), RBAC por endpoint, el circuit breaker del webhook
@@ -188,6 +184,9 @@ Ninguna de estas es un descuido — son simplificaciones deliberadas con un tech
   no hay integración con Mercado Pago/Stripe (documentado a propósito, es un proyecto de portfolio).
 - **El webhook saliente es best-effort** — retry + circuit breaker, pero sin dead-letter queue. Si
   n8n está caído más allá de la ventana de retry, esa notificación puntual se pierde.
+- **El rate limit mira la IP de la conexión**, no `X-Forwarded-For` (se puede falsificar). Detrás de un
+  reverse proxy hay que arrancar con `FORWARD_HEADERS_STRATEGY=native`; si no, todos los clientes
+  comparten el límite del proxy.
 - **Una sola instancia de MySQL**, sin réplicas ni failover — coherente con el resto de las
   limitaciones de infra de arriba.
 
