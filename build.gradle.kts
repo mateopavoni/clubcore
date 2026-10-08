@@ -1,6 +1,6 @@
 plugins {
     java
-    id("org.springframework.boot") version "3.3.12"
+    id("org.springframework.boot") version "3.5.16"
     id("io.spring.dependency-management") version "1.1.7"
     // Expone commit/branch/build-time en /actuator/info
     id("com.gorylenko.gradle-git-properties") version "2.4.2"
@@ -13,6 +13,12 @@ configure<com.gorylenko.GitPropertiesPluginExtension> {
     // No romper el build si se compila desde un tarball sin .git (ej. algunos entornos de deploy)
     failOnNoGitDirectory = false
 }
+
+// Parches de seguridad dentro de la misma línea: el BOM de Spring Boot 3.5.16 trae Tomcat 10.1.55 y
+// Jackson 2.21.4, que tienen avisos HIGH/CRITICAL ya corregidos en 10.1.60 y 2.21.7 (Trivy, 2026-10-08).
+// Sacar estas dos líneas cuando se suba a un Spring Boot cuyo BOM ya las incluya.
+extra["tomcat.version"] = "10.1.60"
+extra["jackson-bom.version"] = "2.21.7"
 
 java {
     toolchain {
@@ -52,7 +58,7 @@ dependencies {
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
 
     // OpenAPI / Swagger UI
-    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0")
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.17")
 
     // Resilience4j — retry + circuit breaker en webhook saliente a n8n
     // Versión 2.2.x es la compatible con Spring Boot 3.2.x+
